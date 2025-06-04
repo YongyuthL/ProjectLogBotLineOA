@@ -150,8 +150,13 @@ async def webhook(req: Request):
             # ตรวจสอบว่าคือโครงการใหม่หรือการติดตามโดยดู key json
             if "project_no" in data:
                 # โครงการใหม่
-                insert_result = projectmaster_collection.insert_one(data)
-                response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'}"
+                
+                existing = projectmaster_collection.find_one({"project_no": data["project_no"]})
+                if existing:
+                    response_text = f"❌ ข้อมูลโครงการนี้: โครงการที่ {data.get('project_no')} : {data.get('project_name') or 'ไม่ทราบชื่อ'} มีอยู่ในระบบแล้วครับ"
+                else:
+                    insert_result = projectmaster_collection.insert_one(data)
+                    response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'}"
                 
             elif "branch" in data:
                 # การติดตาม
