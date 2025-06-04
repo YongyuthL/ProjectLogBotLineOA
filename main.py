@@ -220,7 +220,7 @@ async def webhook(req: Request):
                     response_text = "\n".join(errors)
                 else:
                     insert_result = projectlog_collection.insert_one(data)
-                    response_text = f"✅ บันทึกข้อมูลการติดตามแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'} การติดตามครั้งที่  {data.get('follow_up_no') or 'ไม่ระบุ'}"
+                    response_text = f"✅ บันทึกข้อมูลการติดตามแล้วครับ: โครงการ: {data.get('project') or 'ไม่ทราบชื่อ'} การติดตามครั้งที่  {data.get('follow_up_no') or 'ไม่ระบุ'}"
                     
             else:
                 response_text = f"❌ ไม่สามารถระบุประเภทข้อมูลได้: {e}"
