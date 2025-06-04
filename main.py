@@ -38,12 +38,13 @@ app = FastAPI()
 # สร้าง LLM chain
 def get_llm_chain():
     prompt = PromptTemplate.from_template(
-        "ตรวจสอบข้อความนี้ว่าเป็น 'โครงการใหม่' หรือ 'การติดตาม'\n"
+        "ตรวจสอบข้อความนี้ว่าเป็น 'โครงการใหม่' หรือ 'การติดตาม'\n\n"
         "- ถ้าเป็นโครงการใหม่ ให้แปลงข้อมูลเป็น JSON ตามโครงสร้างนี้:\n"
-        "  project_no, project_name, project_date, description, contractor, supervisor\n"
+        "  project_no (string), project_name, project_date, description, contractor, supervisor\n"
         "- ถ้าเป็นการติดตาม ให้แปลงข้อมูลเป็น JSON ตามโครงสร้างนี้:\n"
         "  branch, date (YYYY-MM-DD), follow_up_no, project, address, description, next_follow_up_date (YYYY-MM-DD)\n\n"
         "ให้แปลงวันที่จาก พ.ศ. เป็น ค.ศ. โดยหัก 543 และแสดงผลในรูปแบบ YYYY-MM-DD\n"
+        "บังคับให้ทุกค่าที่เป็นเลข เช่น project_no หรือ follow_up_no ต้องอยู่ในรูปแบบ string (ใส่เครื่องหมายคำพูด)\n"
         "ส่งกลับเฉพาะ JSON เท่านั้น ไม่ต้องอธิบายหรือใส่ข้อความอื่นใด\n\n"
         "ข้อความ: {text}"
     )
