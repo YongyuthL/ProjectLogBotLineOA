@@ -1,3 +1,4 @@
+import datetime
 from fastapi.responses import FileResponse
 from fastapi import FastAPI, Request
 import httpx
@@ -76,6 +77,46 @@ def is_valid_phone(phone: str) -> bool:
 def is_valid_email(email: str) -> bool:
     return bool(re.fullmatch(r"[^@]+@[^@]+\.[^@]+", email.strip()))
 
+def is_valid_project_data(data: dict) -> tuple[bool, str]:
+    required_fields = ["project_no", "project_name", "project_date", "description", "contractor"]
+    for field in required_fields:
+        if field not in data or not str(data[field]).strip():
+            return False, f"❌ กรุณาระบุข้อมูลให้ครบถ้วนครับ"
+
+    # ตรวจสอบรูปแบบวันที่
+    try:
+        datetime.strptime(data["project_date"], "%Y-%m-%d")
+    except ValueError:
+        return False, "❌ วันที่โครงการต้องอยู่ในรูปแบบ YYYY-MM-DD ครับ"
+
+    return True, ""
+
+
+
+def is_valid_date(date_str):
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+def validate_follow_up(data):
+    
+    required_fields = ["branch", "date", "follow_up_no", "project", "address", "description"]
+    missing_fields = [field for field in required_fields if not data.get(field)]
+    errors = []
+
+    if missing_fields:
+        errors.append(f"❌ กรุณาระบุข้อมูลให้ครบถ้วนครับ")
+
+    if data.get("date") and not is_valid_date(data["date"]):
+        errors.append("❌ รูปแบบวันที่ไม่ถูกต้อง ต้องเป็น YYYY-MM-DD")
+
+    if data.get("next_follow_up_date") and not is_valid_date(data["next_follow_up_date"]):
+        errors.append("❌ รูปแบบวันที่ติดตามครั้งถัดไปไม่ถูกต้อง ต้องเป็น YYYY-MM-DD")
+
+    return errors
+
 @app.get("/download/{filename}")
 async def download_excel(filename: str):
     filepath = f"/tmp/{filename}"
@@ -99,27 +140,37 @@ async def webhook(req: Request):
             text = event["message"]["text"]
             reply_token = event["replyToken"]
 
+            if "Update ข้อมูลโครงการ" in text:
+                await reply_to_line(reply_token, "ท่านสามารถบันทึกข้อมูลโครงการได้โดยพิมพ์ เลขที่โครงการ ชื่อโครงการ วันที่โครงการ รายละเอียดโครงการ ผู้รับเหมา ผู้ดูแล(หากมี) และ สามารถอัพเดตสถานะโครงการได้โดยการพิมพ์"
+                                    "สาขา วันที่อัพเดตโครงการ ครั้งที่ติดตาม ชื่อโครงการ ที่อยู่โครงการ รายละเอียดโครงการ วันที่อัพเดตครั้งถัดไป 😉"
+                                    )
+                
             if "Upload รูปภาพโครงการ" in text:
                 await reply_to_line(reply_token, "ขออภัยในความไม่สะดวก ระบบกำลังอยู่ระหว่างการพัฒนา อดใจรอซักนิดนะครับ 😉")
                 
+            # 👉 ถ้าผู้ใช้พิมพ์ "แสดงข้อมูลโครงการ"
             if "แสดงข้อมูลโครงการ" in text:
-                await reply_to_line(reply_token, "ขออภัยในความไม่สะดวก ระบบกำลังอยู่ระหว่างการพัฒนา อดใจรอซักนิดนะครับ 😉")
-                
-            # 👉 ถ้าผู้ใช้พิมพ์ "ดึงข้อมูลลูกค้า"
-            if "ดึงข้อมูลลูกค้า" in text:
-                customers = list(projectmaster_collection.find({}, {"_id": 0}))
-                if not customers:
-                    await reply_to_line(reply_token, "❌ ยังไม่มีข้อมูลลูกค้าในระบบครับ")
+                projectmaster = list(projectmaster_collection.find({}, {"_id": 0}))
+                projectlog = list(projectlog_collection.find({}, {"_id": 0}))
+                if not projectmaster and not projectlog:
+                    await reply_to_line(reply_token, "❌ ยังไม่มีข้อมูลโครงการในระบบครับ")
                 else:
-                    df = pd.DataFrame(customers)
-                    filename = f"customers_{uuid.uuid4().hex}.xlsx"
+                    df_master = pd.DataFrame(projectmaster)
+                    df_log = pd.DataFrame(projectlog)
+                    filename = f"project_{uuid.uuid4().hex}.xlsx"
                     filepath = f"/tmp/{filename}"
-                    df.to_excel(filepath, index=False)
-
+                    
+                    # เขียนลง Excel โดยให้แต่ละ DataFrame อยู่คนละชีท
+                    with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
+                        if not projectmaster:
+                            df_master.to_excel(writer, sheet_name="โครงการ", index=False)
+                        if not projectlog:
+                            df_log.to_excel(writer, sheet_name="ติดตามโครงการ", index=False)
+                        
                     # URL บน Render ที่เปิดให้โหลด
                     download_url = f"https://fastapi-mongo-lineoa.onrender.com/download/{filename}"
 
-                    await reply_to_line(reply_token, f"📥 ดาวน์โหลดข้อมูลลูกค้าได้ที่นี่:\n{download_url}")
+                    await reply_to_line(reply_token, f"📥 ดาวน์โหลดข้อมูลโครงการได้ที่นี่:\n{download_url}")
                     
                 continue  # ข้ามไม่ให้ประมวลผล LangChain
 
@@ -149,20 +200,27 @@ async def webhook(req: Request):
 
             # ตรวจสอบว่าคือโครงการใหม่หรือการติดตามโดยดู key json
             if "project_no" in data:
-                # โครงการใหม่
-                
-                existing = projectmaster_collection.find_one({"project_no": data["project_no"]})
-                if existing:
-                    response_text = f"❌ ข้อมูลโครงการนี้: โครงการที่ {data.get('project_no')} : {data.get('project_name') or 'ไม่ทราบชื่อ'} มีอยู่ในระบบแล้วครับ"
+                is_valid, error_message = is_valid_project_data(data)
+                if not is_valid:
+                    response_text = error_message
                 else:
-                    insert_result = projectmaster_collection.insert_one(data)
-                    response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'}"
-                
+                # โครงการใหม่
+                    existing = projectmaster_collection.find_one({"project_no": data["project_no"]})
+                    if existing:
+                        response_text = f"❌ ข้อมูลโครงการนี้: โครงการที่ {data.get('project_no')} : {data.get('project_name') or 'ไม่ทราบชื่อ'} มีอยู่ในระบบแล้วครับ"
+                    else:
+                        insert_result = projectmaster_collection.insert_one(data)
+                        response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'}"
+                    
             elif "branch" in data:
-                # การติดตาม
-                insert_result = projectlog_collection.insert_one(data)
-                response_text = f"✅ บันทึกข้อมูลการติดตามแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'} การติดตามครั้งที่  {data.get('follow_up_no') or 'ไม่ระบุ'}"
-                
+               # การติดตาม
+                errors = validate_follow_up(data)
+                if errors:
+                    response_text = "\n".join(errors)
+                else:
+                    insert_result = projectlog_collection.insert_one(data)
+                    response_text = f"✅ บันทึกข้อมูลการติดตามแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'} การติดตามครั้งที่  {data.get('follow_up_no') or 'ไม่ระบุ'}"
+                    
             else:
                 response_text = f"❌ ไม่สามารถระบุประเภทข้อมูลได้: {e}"
             
