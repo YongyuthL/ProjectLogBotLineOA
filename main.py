@@ -19,8 +19,8 @@ line_channel_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 
 # MongoDB setup
 client = MongoClient(mongo_uri)
-db = client.get_database("customerdb")
-collection = db["customers"]
+db = client.get_database("projectlogdb")
+collection = db["projectlog"]
 
 try:
     client.admin.command("ping")
@@ -36,7 +36,9 @@ app = FastAPI()
 # สร้าง LLM chain
 def get_llm_chain():
     prompt = PromptTemplate.from_template(
-        "แปลงข้อความ: {text} ให้เป็น JSON ที่มี name, phone, email โดย name ต้องเป็นชื่อ-นามสกุลที่รวมกัน เช่น 'มีนะ ขยันมาก' ห้ามแยกชื่อกับนามสกุล และอย่าอธิบายเพิ่มเติม"
+        "แปลงข้อความ: {text} ให้เป็น JSON ตามโครงสร้างนี้:\n\n"
+        "branch, date (รูปแบบ YYYY-MM-DD), follow_up_no, project, address, description, next_follow_up_date (YYYY-MM-DD)\n"
+        "โดยไม่ต้องอธิบายหรือใส่ข้อความอื่นนอกจาก JSON"
     )
     llm = ChatOpenAI(
         temperature=0,
@@ -77,7 +79,7 @@ async def download_excel(filename: str):
     return FileResponse(
         path=filepath,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="customers.xlsx"
+        filename="projectlog.xlsx"
     )
     
 # Webhook endpoint
@@ -91,13 +93,10 @@ async def webhook(req: Request):
             text = event["message"]["text"]
             reply_token = event["replyToken"]
 
-            if "บันทึกข้อมูลลูกค้า" in text:
-                await reply_to_line(reply_token, "สามารถบันทึกข้อมูลค้าโดยการพิมพ์ ชื่อ-สกุล เบอร์โทร E-mail ตัวอย่าง มานะ ใจดี 0899999999 mana_jaidee@dynastyceramic.com 😊")
-                
-            if "แก้ไขข้อมูล" in text:
+            if "Upload รูปภาพโครงการ" in text:
                 await reply_to_line(reply_token, "ขออภัยในความไม่สะดวก ระบบกำลังอยู่ระหว่างการพัฒนา อดใจรอซักนิดนะครับ 😉")
                 
-            if "ลบข้อมูล" in text:
+            if "แสดงข้อมูลโครงการ" in text:
                 await reply_to_line(reply_token, "ขออภัยในความไม่สะดวก ระบบกำลังอยู่ระหว่างการพัฒนา อดใจรอซักนิดนะครับ 😉")
                 
             # 👉 ถ้าผู้ใช้พิมพ์ "ดึงข้อมูลลูกค้า"
@@ -127,16 +126,16 @@ async def webhook(req: Request):
                 match = re.search(r'\{.*\}', result.content, re.DOTALL)
                 data = json.loads(match.group())
 
-                name = str(data.get("name", "")).strip()
-                phone = str(data.get("phone", "")).strip()
-                email = str(data.get("email", "")).strip()
+                # name = str(data.get("name", "")).strip()
+                # phone = str(data.get("phone", "")).strip()
+                # email = str(data.get("email", "")).strip()
                 
-                if not (is_valid_name(name) and is_valid_phone(phone) and is_valid_email(email)):
-                    response_text = "❌ กรุณากรอกข้อมูลให้ครบถ้วน ชื่อ-สกุล เบอร์โทร E-mail ตัวอย่าง มานะ ใจดี 0899999999 mana_jaidee@dynastyceramic.com 😊"
-                else:
+                # if not (is_valid_name(name) and is_valid_phone(phone) and is_valid_email(email)):
+                    # response_text = "❌ กรุณากรอกข้อมูลให้ครบถ้วน ชื่อ-สกุล เบอร์โทร E-mail ตัวอย่าง มานะ ใจดี 0899999999 mana_jaidee@dynastyceramic.com 😊"
+                # else:
                     # บันทึกลง MongoDB
-                    insert_result = collection.insert_one(data)
-                    response_text = f"✅ บันทึกข้อมูลแล้วครับ: {data.get('name') or 'ไม่ทราบชื่อ'}"
+                insert_result = collection.insert_one(data)
+                response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project') or 'ไม่ทราบชื่อ'}"
 
             except Exception as e:
                 response_text = f"❌ ไม่สามารถประมวลผลข้อมูลได้: {e}"
