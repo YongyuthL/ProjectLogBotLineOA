@@ -4,6 +4,5 @@ langchain
 openai
 pymongo
 langchain-community
-uuid
 pandas
 openpyxl
