@@ -20,7 +20,8 @@ line_channel_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 # MongoDB setup
 client = MongoClient(mongo_uri)
 db = client.get_database("projectlogdb")
-collection = db["projectlog"]
+projectmaster_collection = db["projectmaster"]
+projectlog_collection = db["projectlog"]
 
 try:
     client.admin.command("ping")
@@ -36,9 +37,13 @@ app = FastAPI()
 # สร้าง LLM chain
 def get_llm_chain():
     prompt = PromptTemplate.from_template(
-        "แปลงข้อความ: {text} ให้เป็น JSON ตามโครงสร้างนี้:\n\n"
-        "branch, date (รูปแบบ YYYY-MM-DD), follow_up_no, project, address, description, next_follow_up_date (YYYY-MM-DD)\n"
-        "โดยไม่ต้องอธิบายหรือใส่ข้อความอื่นนอกจาก JSON"
+        "ตรวจสอบข้อความนี้ว่าเป็น 'โครงการใหม่' หรือ 'การติดตาม'\n"
+        "- ถ้าเป็นโครงการใหม่ ให้แปลงข้อมูลเป็น JSON ตามโครงสร้างนี้:\n"
+        "  project_no, project_name, project_date, description, contractor, supervisor\n"
+        "- ถ้าเป็นการติดตาม ให้แปลงข้อมูลเป็น JSON ตามโครงสร้างนี้:\n"
+        "  branch, date (YYYY-MM-DD), follow_up_no, project, address, description, next_follow_up_date (YYYY-MM-DD)\n\n"
+        "ส่งกลับเฉพาะ JSON เท่านั้น ไม่ต้องอธิบายหรือใส่ข้อความอื่นใด\n\n"
+        "ข้อความ: {text}"
     )
     llm = ChatOpenAI(
         temperature=0,
@@ -101,7 +106,7 @@ async def webhook(req: Request):
                 
             # 👉 ถ้าผู้ใช้พิมพ์ "ดึงข้อมูลลูกค้า"
             if "ดึงข้อมูลลูกค้า" in text:
-                customers = list(collection.find({}, {"_id": 0}))
+                customers = list(projectmaster_collection.find({}, {"_id": 0}))
                 if not customers:
                     await reply_to_line(reply_token, "❌ ยังไม่มีข้อมูลลูกค้าในระบบครับ")
                 else:
@@ -134,12 +139,27 @@ async def webhook(req: Request):
                     # response_text = "❌ กรุณากรอกข้อมูลให้ครบถ้วน ชื่อ-สกุล เบอร์โทร E-mail ตัวอย่าง มานะ ใจดี 0899999999 mana_jaidee@dynastyceramic.com 😊"
                 # else:
                     # บันทึกลง MongoDB
-                insert_result = collection.insert_one(data)
+                insert_result = projectmaster_collection.insert_one(data)
                 response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project') or 'ไม่ทราบชื่อ'}"
 
             except Exception as e:
                 response_text = f"❌ ไม่สามารถประมวลผลข้อมูลได้: {e}"
 
+
+            # ตรวจสอบว่าคือโครงการใหม่หรือการติดตามโดยดู key json
+            if "project_no" in data:
+                # โครงการใหม่
+                insert_result = projectmaster_collection.insert_one(data)
+                response_text = f"✅ บันทึกข้อมูลแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'}"
+                
+            elif "branch" in data:
+                # การติดตาม
+                insert_result = projectlog_collection.insert_one(data)
+                response_text = f"✅ บันทึกข้อมูลการติดตามแล้วครับ: โครงการ: {data.get('project_name') or 'ไม่ทราบชื่อ'} การติดตามครั้งที่  {data.get('follow_up_no') or 'ไม่ระบุ'}"
+                
+            else:
+                response_text = f"❌ ไม่สามารถระบุประเภทข้อมูลได้: {e}"
+            
             await reply_to_line(reply_token, response_text)
 
     return {"status": "ok"}
