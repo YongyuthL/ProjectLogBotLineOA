@@ -162,9 +162,9 @@ async def webhook(req: Request):
                     
                     # เขียนลง Excel โดยให้แต่ละ DataFrame อยู่คนละชีท
                     with pd.ExcelWriter(filepath, engine="openpyxl") as writer:
-                        if not projectmaster:
+                        if projectmaster:  # ถ้ามีข้อมูล
                             df_master.to_excel(writer, sheet_name="โครงการ", index=False)
-                        if not projectlog:
+                        if projectlog:     # ถ้ามีข้อมูล
                             df_log.to_excel(writer, sheet_name="ติดตามโครงการ", index=False)
                         
                     # URL บน Render ที่เปิดให้โหลด
